@@ -1,6 +1,6 @@
 $schema: ./schema/mcp-agent.config.schema.json
 anthropic: null
-default_search_server: bocha-mcp
+# default_search_server: null  # 已禁用网上搜索
 document_segmentation:
   enabled: true
   size_threshold_chars: 50000
@@ -17,13 +17,13 @@ logger:
   - file
 mcp:
   servers:
-    bocha-mcp:
-      args:
-      - tools/bocha_search_server.py
-      command: python3
-      env:
-        BOCHA_API_KEY: ''
-        PYTHONPATH: .
+    # bocha-mcp:
+    #   args:
+    #   - tools/bocha_search_server.py
+    #   command: python3
+    #   env:
+    #     BOCHA_API_KEY: ''
+    #     PYTHONPATH: .
     # brave:
     #   args:
     #   - -y
