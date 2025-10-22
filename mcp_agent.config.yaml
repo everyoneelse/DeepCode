@@ -1,6 +1,7 @@
 $schema: ./schema/mcp-agent.config.schema.json
 anthropic: null
-default_search_server: brave
+# To completely disable web search servers, set to 'none'
+default_search_server: none
 document_segmentation:
   enabled: true
   size_threshold_chars: 50000

@@ -192,7 +192,8 @@ def get_default_search_server(config_path: str = "mcp_agent.config.yaml"):
         config_path: Path to the main configuration file
 
     Returns:
-        str: The default search server name ("brave" or "bocha-mcp")
+        str: The default search server name ("brave" or "bocha-mcp").
+             If disabled via config ("none"/"disabled"/empty), returns "none".
     """
     try:
         if os.path.exists(config_path):
@@ -200,8 +201,18 @@ def get_default_search_server(config_path: str = "mcp_agent.config.yaml"):
                 config = yaml.safe_load(f)
 
             default_server = config.get("default_search_server", "brave")
-            print(f"🔍 Using search server: {default_server}")
-            return default_server
+            # Normalize and handle disabled cases
+            if default_server is None:
+                default_server_norm = "none"
+            else:
+                default_server_norm = str(default_server).strip().lower()
+
+            if default_server_norm in ("none", "disabled", ""):
+                print("🔍 Search server disabled via configuration")
+                return "none"
+
+            print(f"🔍 Using search server: {default_server_norm}")
+            return default_server_norm
         else:
             print(f"⚠️ Config file {config_path} not found, using default: brave")
             return "brave"
@@ -221,9 +232,14 @@ def get_search_server_names(
         additional_servers: Optional list of additional servers to include
 
     Returns:
-        List[str]: List of server names including the default search server
+        List[str]: List of server names including the default search server.
+                  If disabled ("none"/"disabled"), returns an empty list.
     """
     default_search = get_default_search_server()
+    # If search server is disabled, return an empty list
+    if default_search in ("none", "disabled", ""):
+        return []
+
     server_names = [default_search]
 
     if additional_servers:
