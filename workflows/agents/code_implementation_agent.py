@@ -5,6 +5,7 @@ Handles systematic code implementation with progress tracking and
 memory optimization for long-running development sessions.
 """
 
+import asyncio
 import json
 import time
 import logging
@@ -47,6 +48,7 @@ class CodeImplementationAgent:
         mcp_agent,
         logger: Optional[logging.Logger] = None,
         enable_read_tools: bool = True,
+        mcp_timeout: float = 60.0,
     ):
         """
         Initialize Code Implementation Agent
@@ -55,10 +57,12 @@ class CodeImplementationAgent:
             mcp_agent: MCP agent instance for tool calls
             logger: Logger instance for tracking operations
             enable_read_tools: Whether to enable read_file and read_code_mem tools (default: True)
+            mcp_timeout: Timeout for MCP tool calls in seconds (default: 60.0)
         """
         self.mcp_agent = mcp_agent
         self.logger = logger or self._create_default_logger()
         self.enable_read_tools = enable_read_tools  # Control read tools execution
+        self.mcp_timeout = mcp_timeout  # MCP call timeout
 
         self.implementation_summary = {
             "completed_files": [],
@@ -225,8 +229,24 @@ class CodeImplementationAgent:
                         )
 
                 if self.mcp_agent:
-                    # Execute tool call through MCP protocol
-                    result = await self.mcp_agent.call_tool(tool_name, tool_input)
+                    # Execute tool call through MCP protocol with timeout
+                    try:
+                        result = await asyncio.wait_for(
+                            self.mcp_agent.call_tool(tool_name, tool_input),
+                            timeout=self.mcp_timeout
+                        )
+                    except asyncio.TimeoutError:
+                        self.logger.error(
+                            f"MCP tool call timed out after {self.mcp_timeout}s: {tool_name}"
+                        )
+                        result = json.dumps(
+                            {
+                                "status": "error",
+                                "message": f"Tool call timed out after {self.mcp_timeout} seconds",
+                                "tool_name": tool_name,
+                            },
+                            ensure_ascii=False,
+                        )
 
                     # Track file implementation progress
                     if tool_name == "write_file":
@@ -298,8 +318,11 @@ class CodeImplementationAgent:
         if self.memory_agent and self.mcp_agent:
             try:
                 # Use read_code_mem MCP tool to check if summary exists (pass file path as list)
-                read_code_mem_result = await self.mcp_agent.call_tool(
-                    "read_code_mem", {"file_paths": [file_path]}
+                read_code_mem_result = await asyncio.wait_for(
+                    self.mcp_agent.call_tool(
+                        "read_code_mem", {"file_paths": [file_path]}
+                    ),
+                    timeout=self.mcp_timeout
                 )
 
                 # Parse the result to check if summary was found
@@ -316,6 +339,9 @@ class CodeImplementationAgent:
                         )
                     except json.JSONDecodeError:
                         should_use_summary = False
+            except asyncio.TimeoutError:
+                self.logger.warning(f"read_code_mem check timed out for {file_path}, skipping summary")
+                should_use_summary = False
             except Exception as e:
                 self.logger.debug(f"read_code_mem check failed for {file_path}: {e}")
                 should_use_summary = False
@@ -325,9 +351,26 @@ class CodeImplementationAgent:
 
             # Use the MCP agent to call read_code_mem tool
             if self.mcp_agent:
-                result = await self.mcp_agent.call_tool(
-                    "read_code_mem", {"file_paths": [file_path]}
-                )
+                try:
+                    result = await asyncio.wait_for(
+                        self.mcp_agent.call_tool(
+                            "read_code_mem", {"file_paths": [file_path]}
+                        ),
+                        timeout=self.mcp_timeout
+                    )
+                except asyncio.TimeoutError:
+                    self.logger.error(f"read_code_mem timed out for {file_path}")
+                    return {
+                        "tool_id": tool_call["id"],
+                        "tool_name": "read_file",
+                        "result": json.dumps(
+                            {
+                                "status": "error",
+                                "message": f"read_code_mem timed out after {self.mcp_timeout} seconds",
+                            },
+                            ensure_ascii=False,
+                        ),
+                    }
 
                 # Modify the result to indicate it was originally a read_file call
                 import json
@@ -385,7 +428,24 @@ class CodeImplementationAgent:
 
             # Execute the original read_file call
             if self.mcp_agent:
-                result = await self.mcp_agent.call_tool("read_file", tool_call["input"])
+                try:
+                    result = await asyncio.wait_for(
+                        self.mcp_agent.call_tool("read_file", tool_call["input"]),
+                        timeout=self.mcp_timeout
+                    )
+                except asyncio.TimeoutError:
+                    self.logger.error(f"read_file timed out for {file_path}")
+                    return {
+                        "tool_id": tool_call["id"],
+                        "tool_name": "read_file",
+                        "result": json.dumps(
+                            {
+                                "status": "error",
+                                "message": f"read_file timed out after {self.mcp_timeout} seconds",
+                            },
+                            ensure_ascii=False,
+                        ),
+                    }
 
                 # Track dependency analysis for the actual file read
                 self._track_dependency_analysis(tool_call, result)
@@ -940,10 +1000,24 @@ class CodeImplementationAgent:
         for file_path in files_to_test:
             if self.mcp_agent:
                 try:
-                    result = await self.mcp_agent.call_tool(
-                        "read_code_mem", {"file_paths": [file_path]}
+                    result = await asyncio.wait_for(
+                        self.mcp_agent.call_tool(
+                            "read_code_mem", {"file_paths": [file_path]}
+                        ),
+                        timeout=self.mcp_timeout
                     )
+                except asyncio.TimeoutError:
+                    self.logger.warning(
+                        f"read_code_mem timed out for {file_path} during testing"
+                    )
+                    continue
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to test read_code_mem for {file_path}: {e}"
+                    )
+                    continue
 
+                try:
                     # Parse the result to check if summary was found
                     import json
 
@@ -959,7 +1033,7 @@ class CodeImplementationAgent:
                         summary_files_found += 1
                 except Exception as e:
                     self.logger.warning(
-                        f"Failed to test read_code_mem for {file_path}: {e}"
+                        f"Failed to parse read_code_mem result for {file_path}: {e}"
                     )
             else:
                 self.logger.warning("MCP agent not available for testing")
@@ -1045,9 +1119,12 @@ class CodeImplementationAgent:
             return False
 
         try:
-            # Use MCP agent to call read_code_mem tool
-            result = await self.mcp_agent.call_tool(
-                "read_code_mem", {"file_paths": [test_file_path]}
+            # Use MCP agent to call read_code_mem tool with timeout
+            result = await asyncio.wait_for(
+                self.mcp_agent.call_tool(
+                    "read_code_mem", {"file_paths": [test_file_path]}
+                ),
+                timeout=self.mcp_timeout
             )
 
             # Parse the result to check if summary was found
@@ -1060,6 +1137,9 @@ class CodeImplementationAgent:
                 in ["all_summaries_found", "partial_summaries_found"]
                 and result_data.get("summaries_found", 0) > 0
             )
+        except asyncio.TimeoutError:
+            self.logger.warning(f"read_code_mem optimization test timed out for {test_file_path}")
+            return False
         except Exception as e:
             self.logger.warning(f"Failed to test read_code_mem optimization: {e}")
             return False
