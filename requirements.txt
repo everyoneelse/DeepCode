@@ -3,6 +3,8 @@ aiohttp>=3.8.0
 anthropic
 asyncio-mqtt
 docling
+fastmcp>=2.12.0
+httpx>=0.24.0
 mcp-agent
 mcp-server-git
 nest_asyncio

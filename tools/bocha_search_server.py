@@ -12,7 +12,7 @@ load_dotenv()
 # Initialize FastMCP server
 server = FastMCP(
     "bocha-search-mcp",
-    prompt="""
+    instructions="""
 # Bocha Search MCP Server
 
 Bocha is a Chinese search engine for AI, This server provides tools for searching the web using Bocha Search API.
@@ -199,16 +199,19 @@ def main():
     """Initialize and run the MCP server."""
 
     # Check for required environment variables
-    if "BOCHA_API_KEY" not in os.environ:
+    if "BOCHA_API_KEY" not in os.environ or not os.environ.get("BOCHA_API_KEY"):
         print(
-            "Error: BOCHA_API_KEY environment variable is required",
+            "Warning: BOCHA_API_KEY environment variable is not set.",
             file=sys.stderr,
         )
         print(
-            "Get a Bocha API key from: " "https://open.bochaai.com",
+            "Please configure BOCHA_API_KEY to use Bocha search tools.",
             file=sys.stderr,
         )
-        sys.exit(1)
+        print(
+            "Get a Bocha API key from: https://open.bochaai.com",
+            file=sys.stderr,
+        )
 
     print("Starting Bocha Search MCP server...", file=sys.stderr)
 
