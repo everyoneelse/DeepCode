@@ -136,6 +136,12 @@ class CodeImplementationWorkflowWithIndex:
                 results["file_tree"] = await self.create_file_structure(
                     plan_content, target_directory
                 )
+                
+                # Double-check that the code directory was created
+                if not self._check_file_tree_exists(target_directory):
+                    self.logger.warning("File tree creation completed but directory not found, creating manually...")
+                    os.makedirs(code_directory, exist_ok=True)
+                    results["file_tree"] += " (manually created as fallback)"
 
             # Code implementation
             if pure_code_mode:
@@ -169,19 +175,22 @@ class CodeImplementationWorkflowWithIndex:
     ) -> str:
         """Create file tree structure based on implementation plan"""
         self.logger.info("Starting file tree creation...")
+        
+        code_directory = os.path.join(target_directory, "generate_code")
 
-        structure_agent = Agent(
-            name="StructureGeneratorAgent",
-            instruction=STRUCTURE_GENERATOR_PROMPT,
-            server_names=["command-executor"],
-        )
-
-        async with structure_agent:
-            creator = await structure_agent.attach_llm(
-                get_preferred_llm_class(self.config_path)
+        try:
+            structure_agent = Agent(
+                name="StructureGeneratorAgent",
+                instruction=STRUCTURE_GENERATOR_PROMPT,
+                server_names=["command-executor"],
             )
 
-            message = f"""Analyze the following implementation plan and generate shell commands to create the file tree structure.
+            async with structure_agent:
+                creator = await structure_agent.attach_llm(
+                    get_preferred_llm_class(self.config_path)
+                )
+
+                message = f"""Analyze the following implementation plan and generate shell commands to create the file tree structure.
 
 Target Directory: {target_directory}/generate_code
 
@@ -200,9 +209,23 @@ Requirements:
 - Use relative paths to the target directory
 - Execute commands to actually create the file structure"""
 
-            result = await creator.generate_str(message=message)
-            self.logger.info("File tree structure creation completed")
-            return result
+                result = await creator.generate_str(message=message)
+                self.logger.info("File tree structure creation completed")
+                
+                # Verify the code directory was created
+                if os.path.exists(code_directory):
+                    self.logger.info(f"✅ Verified: Code directory exists at {code_directory}")
+                else:
+                    self.logger.warning(f"⚠️ Warning: Code directory was not created at {code_directory}")
+                
+                return result
+        except Exception as e:
+            self.logger.error(f"Error during file tree creation: {e}")
+            # Ensure at least the base directory exists
+            if not os.path.exists(code_directory):
+                self.logger.info(f"Creating fallback code directory: {code_directory}")
+                os.makedirs(code_directory, exist_ok=True)
+            raise
 
     async def implement_code_pure(
         self, plan_content: str, target_directory: str, code_directory: str = None
@@ -216,10 +239,25 @@ Requirements:
 
         self.logger.info(f"🎯 Using code directory (MCP workspace): {code_directory}")
 
+        # Check if code directory exists, if not try to create it
         if not os.path.exists(code_directory):
-            raise FileNotFoundError(
-                "File tree structure not found, please run file tree creation first"
-            )
+            self.logger.warning(f"Code directory not found: {code_directory}")
+            self.logger.info("Attempting to create file tree structure...")
+            try:
+                # Try to create the file structure
+                await self.create_file_structure(plan_content, target_directory)
+                
+                # Verify creation was successful
+                if not os.path.exists(code_directory):
+                    # If still doesn't exist, create it manually as a fallback
+                    self.logger.warning("File tree creation did not create directory, creating manually...")
+                    os.makedirs(code_directory, exist_ok=True)
+                    self.logger.info(f"Created code directory: {code_directory}")
+            except Exception as e:
+                self.logger.error(f"Failed to create file tree: {e}")
+                # Create directory as fallback
+                os.makedirs(code_directory, exist_ok=True)
+                self.logger.info(f"Created code directory as fallback: {code_directory}")
 
         try:
             client, client_type = await self._initialize_llm_client()
