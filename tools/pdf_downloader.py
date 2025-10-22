@@ -761,72 +761,199 @@ async def check_url_accessible(url: str) -> Dict[str, Any]:
                     "status": response.status,
                     "content_type": response.headers.get("Content-Type", ""),
                     "content_length": response.headers.get("Content-Length", 0),
+                    "error_message": None,
                 }
-    except Exception:
+    except aiohttp.ClientConnectorError as e:
+        # DNS resolution failure or connection refused
         return {
             "accessible": False,
             "status": 0,
             "content_type": "",
             "content_length": 0,
+            "error_message": f"Connection failed: Unable to connect to server ({str(e)})",
         }
-
-
-async def download_file(url: str, destination: str) -> Dict[str, Any]:
-    """下载单个文件"""
-    start_time = datetime.now()
-    chunk_size = 8192
-
-    try:
-        timeout = aiohttp.ClientTimeout(total=300)  # 5分钟超时
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url) as response:
-                # 检查响应状态
-                response.raise_for_status()
-
-                # 获取文件信息
-                content_type = response.headers.get(
-                    "Content-Type", "application/octet-stream"
-                )
-
-                # 确保目标目录存在
-                parent_dir = os.path.dirname(destination)
-                if parent_dir:
-                    os.makedirs(parent_dir, exist_ok=True)
-
-                # 下载文件
-                downloaded = 0
-                async with aiofiles.open(destination, "wb") as file:
-                    async for chunk in response.content.iter_chunked(chunk_size):
-                        await file.write(chunk)
-                        downloaded += len(chunk)
-
-                # 计算下载时间
-                duration = (datetime.now() - start_time).total_seconds()
-
-                return {
-                    "success": True,
-                    "url": url,
-                    "destination": destination,
-                    "size": downloaded,
-                    "content_type": content_type,
-                    "duration": duration,
-                    "speed": downloaded / duration if duration > 0 else 0,
-                }
-
-    except aiohttp.ClientError as e:
+    except aiohttp.ServerTimeoutError:
+        # Server timeout
         return {
-            "success": False,
-            "url": url,
-            "destination": destination,
-            "error": f"Network error: {str(e)}",
+            "accessible": False,
+            "status": 0,
+            "content_type": "",
+            "content_length": 0,
+            "error_message": "Connection timeout: Server took too long to respond",
+        }
+    except aiohttp.ClientSSLError as e:
+        # SSL/TLS errors
+        return {
+            "accessible": False,
+            "status": 0,
+            "content_type": "",
+            "content_length": 0,
+            "error_message": f"SSL/TLS error: {str(e)}",
+        }
+    except aiohttp.ClientError as e:
+        # Other client errors
+        return {
+            "accessible": False,
+            "status": 0,
+            "content_type": "",
+            "content_length": 0,
+            "error_message": f"Client error: {str(e)}",
         }
     except Exception as e:
+        # Catch-all for unexpected errors
         return {
-            "success": False,
-            "url": url,
-            "destination": destination,
-            "error": f"Download error: {str(e)}",
+            "accessible": False,
+            "status": 0,
+            "content_type": "",
+            "content_length": 0,
+            "error_message": f"Unexpected error: {str(e)}",
         }
+
+
+async def download_file(url: str, destination: str, max_retries: int = 3) -> Dict[str, Any]:
+    """下载单个文件，带重试机制"""
+    start_time = datetime.now()
+    chunk_size = 8192
+    retry_count = 0
+    last_error = None
+
+    while retry_count < max_retries:
+        try:
+            # 设置超时：连接10秒，总共5分钟
+            timeout = aiohttp.ClientTimeout(total=300, connect=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url) as response:
+                    # 检查响应状态
+                    response.raise_for_status()
+
+                    # 获取文件信息
+                    content_type = response.headers.get(
+                        "Content-Type", "application/octet-stream"
+                    )
+
+                    # 确保目标目录存在
+                    parent_dir = os.path.dirname(destination)
+                    if parent_dir:
+                        os.makedirs(parent_dir, exist_ok=True)
+
+                    # 下载文件
+                    downloaded = 0
+                    async with aiofiles.open(destination, "wb") as file:
+                        async for chunk in response.content.iter_chunked(chunk_size):
+                            await file.write(chunk)
+                            downloaded += len(chunk)
+
+                    # 计算下载时间
+                    duration = (datetime.now() - start_time).total_seconds()
+
+                    return {
+                        "success": True,
+                        "url": url,
+                        "destination": destination,
+                        "size": downloaded,
+                        "content_type": content_type,
+                        "duration": duration,
+                        "speed": downloaded / duration if duration > 0 else 0,
+                        "retries": retry_count,
+                    }
+
+        except aiohttp.ClientResponseError as e:
+            # HTTP error responses (4xx, 5xx)
+            if e.status >= 500 and retry_count < max_retries - 1:
+                # Retry on server errors
+                retry_count += 1
+                last_error = f"HTTP {e.status} error: {e.message}"
+                continue
+            return {
+                "success": False,
+                "url": url,
+                "destination": destination,
+                "error": f"HTTP {e.status} error: {e.message}",
+            }
+        except aiohttp.ClientConnectorError as e:
+            # Connection errors (DNS, refused, etc.)
+            if retry_count < max_retries - 1:
+                retry_count += 1
+                last_error = f"Connection failed: {str(e)}"
+                continue
+            return {
+                "success": False,
+                "url": url,
+                "destination": destination,
+                "error": f"Connection failed after {max_retries} attempts: {str(e)}",
+            }
+        except aiohttp.ServerTimeoutError:
+            # Server timeout
+            if retry_count < max_retries - 1:
+                retry_count += 1
+                last_error = "Server timeout"
+                continue
+            return {
+                "success": False,
+                "url": url,
+                "destination": destination,
+                "error": f"Server timeout after {max_retries} attempts",
+            }
+        except aiohttp.ClientPayloadError as e:
+            # Payload/transfer errors (connection reset, incomplete data)
+            if retry_count < max_retries - 1:
+                retry_count += 1
+                last_error = f"Data transfer error: {str(e)}"
+                continue
+            return {
+                "success": False,
+                "url": url,
+                "destination": destination,
+                "error": f"Data transfer failed after {max_retries} attempts: {str(e)}",
+            }
+        except aiohttp.ClientSSLError as e:
+            # SSL/TLS errors - don't retry
+            return {
+                "success": False,
+                "url": url,
+                "destination": destination,
+                "error": f"SSL/TLS error: {str(e)}",
+            }
+        except aiohttp.ClientError as e:
+            # Other client errors
+            if retry_count < max_retries - 1:
+                retry_count += 1
+                last_error = f"Network error: {str(e)}"
+                continue
+            return {
+                "success": False,
+                "url": url,
+                "destination": destination,
+                "error": f"Network error after {max_retries} attempts: {str(e)}",
+            }
+        except OSError as e:
+            # File system errors - don't retry
+            return {
+                "success": False,
+                "url": url,
+                "destination": destination,
+                "error": f"File system error: {str(e)}",
+            }
+        except Exception as e:
+            # Unexpected errors
+            if retry_count < max_retries - 1:
+                retry_count += 1
+                last_error = f"Unexpected error: {str(e)}"
+                continue
+            return {
+                "success": False,
+                "url": url,
+                "destination": destination,
+                "error": f"Download failed after {max_retries} attempts: {str(e)}",
+            }
+
+    # Should not reach here, but just in case
+    return {
+        "success": False,
+        "url": url,
+        "destination": destination,
+        "error": f"Download failed after {max_retries} attempts: {last_error}",
+    }
 
 
 async def move_local_file(source_path: str, destination: str) -> Dict[str, Any]:
@@ -942,8 +1069,9 @@ async def download_files(instruction: str) -> str:
             # 先检查URL是否可访问
             check_result = await check_url_accessible(url)
             if not check_result["accessible"]:
+                error_msg = check_result.get("error_message") or f"HTTP {check_result['status'] or 'Connection failed'}"
                 results.append(
-                    f"[ERROR] Failed to access {url}: HTTP {check_result['status'] or 'Connection failed'}"
+                    f"[ERROR] Failed to access {url}: {error_msg}"
                 )
                 continue
 
@@ -1117,9 +1245,10 @@ async def download_file_to(
     # 先检查URL
     check_result = await check_url_accessible(url)
     if not check_result["accessible"]:
+        error_msg = check_result.get("error_message") or f"HTTP {check_result['status'] or 'Connection failed'}"
         return format_error_message(
             "Cannot access URL",
-            f"{url} (HTTP {check_result['status'] or 'Connection failed'})",
+            f"{url} - {error_msg}",
         )
 
     # 显示下载信息
