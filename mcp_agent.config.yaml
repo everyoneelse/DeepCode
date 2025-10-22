@@ -1,6 +1,6 @@
 $schema: ./schema/mcp-agent.config.schema.json
 anthropic: null
-default_search_server: brave
+# default_search_server: null  # 已禁用网上搜索
 document_segmentation:
   enabled: true
   size_threshold_chars: 50000
@@ -17,20 +17,20 @@ logger:
   - file
 mcp:
   servers:
-    bocha-mcp:
-      args:
-      - tools/bocha_search_server.py
-      command: python3
-      env:
-        BOCHA_API_KEY: ''
-        PYTHONPATH: .
-    brave:
-      args:
-      - -y
-      - '@modelcontextprotocol/server-brave-search'
-      command: npx
-      env:
-        BRAVE_API_KEY: ''
+    # bocha-mcp:
+    #   args:
+    #   - tools/bocha_search_server.py
+    #   command: python3
+    #   env:
+    #     BOCHA_API_KEY: ''
+    #     PYTHONPATH: .
+    # brave:
+    #   args:
+    #   - -y
+    #   - '@modelcontextprotocol/server-brave-search'
+    #   command: npx
+    #   env:
+    #     BRAVE_API_KEY: ''
     code-implementation:
       args:
       - tools/code_implementation_server.py

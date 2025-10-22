@@ -3,7 +3,7 @@ aiohttp>=3.8.0
 anthropic
 asyncio-mqtt
 docling
-mcp-agent
+mcp-agent>=0.6.0,<0.7.0
 mcp-server-git
 nest_asyncio
 pathlib2
