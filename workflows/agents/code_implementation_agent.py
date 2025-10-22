@@ -281,7 +281,12 @@ class CodeImplementationAgent:
         """
         Intercept read_file calls and redirect to read_code_mem if a summary exists.
         This prevents unnecessary file reads if the summary is already available.
+        
+        Performance optimization: Uses timeout to prevent hanging on slow MCP calls.
         """
+        import asyncio
+        import time
+        
         file_path = tool_call["input"].get("file_path")
         if not file_path:
             return {
@@ -298,9 +303,48 @@ class CodeImplementationAgent:
         if self.memory_agent and self.mcp_agent:
             try:
                 # Use read_code_mem MCP tool to check if summary exists (pass file path as list)
-                read_code_mem_result = await self.mcp_agent.call_tool(
-                    "read_code_mem", {"file_paths": [file_path]}
+                # Add timeout to prevent hanging on slow summary file parsing
+                start_time = time.time()
+                read_code_mem_result = await asyncio.wait_for(
+                    self.mcp_agent.call_tool(
+                        "read_code_mem", {"file_paths": [file_path]}
+                    ),
+                    timeout=15.0  # 15-second timeout for summary lookup
                 )
+                elapsed_time = time.time() - start_time
+                
+                # Log slow summary lookups for monitoring
+                if elapsed_time > 5.0:
+                    self.logger.warning(
+                        f"⚠️ Slow read_code_mem call for {file_path}: {elapsed_time:.2f}s"
+                    )
+            except asyncio.TimeoutError:
+                # Timeout occurred - fall back to direct file reading
+                elapsed_time = time.time() - start_time
+                self.logger.warning(
+                    f"⏱️ read_code_mem timeout for {file_path} after {elapsed_time:.2f}s, "
+                    f"falling back to direct file read"
+                )
+                should_use_summary = False
+                # Jump directly to file reading
+                if self.mcp_agent:
+                    result = await self.mcp_agent.call_tool("read_file", tool_call["input"])
+                    self._track_dependency_analysis(tool_call, result)
+                    self._track_tool_call_for_loop_detection("read_file")
+                    return {
+                        "tool_id": tool_call["id"],
+                        "tool_name": "read_file",
+                        "result": result,
+                    }
+                else:
+                    return {
+                        "tool_id": tool_call["id"],
+                        "tool_name": "read_file",
+                        "result": json.dumps(
+                            {"status": "error", "message": "MCP agent not initialized"},
+                            ensure_ascii=False,
+                        ),
+                    }
 
                 # Parse the result to check if summary was found
                 import json
@@ -316,6 +360,9 @@ class CodeImplementationAgent:
                         )
                     except json.JSONDecodeError:
                         should_use_summary = False
+            except asyncio.TimeoutError:
+                # Already handled above with early return
+                pass
             except Exception as e:
                 self.logger.debug(f"read_code_mem check failed for {file_path}: {e}")
                 should_use_summary = False
