@@ -1,6 +1,6 @@
 $schema: ./schema/mcp-agent.config.schema.json
 anthropic: null
-default_search_server: brave
+default_search_server: bocha-mcp
 document_segmentation:
   enabled: true
   size_threshold_chars: 50000
@@ -24,13 +24,13 @@ mcp:
       env:
         BOCHA_API_KEY: ''
         PYTHONPATH: .
-    brave:
-      args:
-      - -y
-      - '@modelcontextprotocol/server-brave-search'
-      command: npx
-      env:
-        BRAVE_API_KEY: ''
+    # brave:
+    #   args:
+    #   - -y
+    #   - '@modelcontextprotocol/server-brave-search'
+    #   command: npx
+    #   env:
+    #     BRAVE_API_KEY: ''
     code-implementation:
       args:
       - tools/code_implementation_server.py
