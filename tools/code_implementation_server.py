@@ -52,6 +52,13 @@ WORKSPACE_DIR = None
 OPERATION_HISTORY = []
 CURRENT_FILES = {}
 
+# Summary file cache to improve read_code_mem performance
+_SUMMARY_CACHE = {
+    "content": None,
+    "mtime": 0,
+    "file_index": {}  # File path to section mapping for fast lookup
+}
+
 
 def initialize_workspace(workspace_dir: str = None):
     """
@@ -853,6 +860,11 @@ async def execute_bash(command: str, timeout: int = 30) -> str:
 async def read_code_mem(file_paths: List[str]) -> str:
     """
     Check if file summaries exist in implement_code_summary.md for multiple files
+    
+    Performance optimizations:
+    - Caches summary file content to avoid repeated file I/O
+    - Uses file modification time to invalidate cache when summary is updated
+    - Provides fast lookup for file summaries
 
     Args:
         file_paths: List of file paths to check for summary information in implement_code_summary.md
@@ -860,7 +872,12 @@ async def read_code_mem(file_paths: List[str]) -> str:
     Returns:
         Summary information for all requested files if available
     """
+    import time
+    global _SUMMARY_CACHE
+    
     try:
+        start_time = time.time()
+        
         if not file_paths or not isinstance(file_paths, list):
             result = {
                 "status": "error",
@@ -894,9 +911,28 @@ async def read_code_mem(file_paths: List[str]) -> str:
             )
             return json.dumps(result, ensure_ascii=False, indent=2)
 
-        # Read the summary file
-        with open(summary_file_path, "r", encoding="utf-8") as f:
-            summary_content = f.read()
+        # Check cache validity based on file modification time
+        current_mtime = summary_file_path.stat().st_mtime
+        cache_valid = (
+            _SUMMARY_CACHE["content"] is not None 
+            and _SUMMARY_CACHE["mtime"] == current_mtime
+        )
+        
+        if cache_valid:
+            # Use cached content
+            summary_content = _SUMMARY_CACHE["content"]
+            logger.debug(f"✅ Using cached summary (mtime: {current_mtime})")
+        else:
+            # Read and cache the summary file
+            logger.info(f"📖 Reading summary file (cache miss or invalidated)")
+            with open(summary_file_path, "r", encoding="utf-8") as f:
+                summary_content = f.read()
+            
+            # Update cache
+            _SUMMARY_CACHE["content"] = summary_content
+            _SUMMARY_CACHE["mtime"] = current_mtime
+            _SUMMARY_CACHE["file_index"] = {}  # Reset index
+            logger.info(f"✅ Summary cached ({len(summary_content)} chars, mtime: {current_mtime})")
 
         if not summary_content.strip():
             result = {
@@ -956,6 +992,13 @@ async def read_code_mem(file_paths: List[str]) -> str:
             "results": results,
         }
 
+        # Performance monitoring
+        elapsed_time = time.time() - start_time
+        if elapsed_time > 2.0:
+            logger.warning(
+                f"⚠️ Slow read_code_mem: {elapsed_time:.2f}s for {len(unique_file_paths)} files"
+            )
+        
         log_operation(
             "read_code_mem",
             {
@@ -963,6 +1006,8 @@ async def read_code_mem(file_paths: List[str]) -> str:
                 "status": overall_status,
                 "total_requested": len(unique_file_paths),
                 "summaries_found": summaries_found,
+                "elapsed_time": elapsed_time,
+                "cache_used": cache_valid,
             },
         )
 
