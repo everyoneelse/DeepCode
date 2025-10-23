@@ -6,6 +6,7 @@ memory optimization for long-running development sessions.
 """
 
 import json
+import asyncio
 import time
 import logging
 from typing import Dict, Any, List, Optional
@@ -113,6 +114,9 @@ class CodeImplementationAgent:
         self.memory_agent = None  # Will be set externally
         self.llm_client = None  # Will be set externally
         self.llm_client_type = None  # Will be set externally
+
+        # Per-tool timeout (seconds)
+        self.tool_timeout_seconds = 30
 
         # Log read tools configuration
         read_tools_status = "ENABLED" if self.enable_read_tools else "DISABLED"
@@ -225,8 +229,8 @@ class CodeImplementationAgent:
                         )
 
                 if self.mcp_agent:
-                    # Execute tool call through MCP protocol
-                    result = await self.mcp_agent.call_tool(tool_name, tool_input)
+                    # Execute tool call through MCP protocol with timeout protection
+                    result = await self._call_tool_with_timeout(tool_name, tool_input)
 
                     # Track file implementation progress
                     if tool_name == "write_file":
@@ -385,7 +389,7 @@ class CodeImplementationAgent:
 
             # Execute the original read_file call
             if self.mcp_agent:
-                result = await self.mcp_agent.call_tool("read_file", tool_call["input"])
+                result = await self._call_tool_with_timeout("read_file", tool_call["input"])
 
                 # Track dependency analysis for the actual file read
                 self._track_dependency_analysis(tool_call, result)
@@ -407,6 +411,41 @@ class CodeImplementationAgent:
                         ensure_ascii=False,
                     ),
                 }
+
+    async def _call_tool_with_timeout(self, tool_name: str, tool_input: Dict[str, Any]):
+        """
+        Call MCP tool with a timeout to prevent hanging.
+        Returns a JSON string with error on timeout.
+        """
+        if not self.mcp_agent:
+            return json.dumps(
+                {"status": "error", "message": "MCP agent not initialized"},
+                ensure_ascii=False,
+            )
+
+        try:
+            return await asyncio.wait_for(
+                self.mcp_agent.call_tool(tool_name, tool_input),
+                timeout=self.tool_timeout_seconds,
+            )
+        except asyncio.TimeoutError:
+            self.logger.error(
+                f"Tool call timed out: {tool_name} after {self.tool_timeout_seconds}s"
+            )
+            return json.dumps(
+                {
+                    "status": "error",
+                    "message": f"Tool call timeout after {self.tool_timeout_seconds}s",
+                    "tool": tool_name,
+                },
+                ensure_ascii=False,
+            )
+        except Exception as e:
+            self.logger.error(f"Tool call failed: {tool_name}: {e}")
+            return json.dumps(
+                {"status": "error", "message": str(e), "tool": tool_name},
+                ensure_ascii=False,
+            )
 
     async def _track_file_implementation_with_summary(
         self, tool_call: Dict, result: Any
@@ -940,9 +979,9 @@ class CodeImplementationAgent:
         for file_path in files_to_test:
             if self.mcp_agent:
                 try:
-                    result = await self.mcp_agent.call_tool(
-                        "read_code_mem", {"file_paths": [file_path]}
-                    )
+                result = await self._call_tool_with_timeout(
+                    "read_code_mem", {"file_paths": [file_path]}
+                )
 
                     # Parse the result to check if summary was found
                     import json
