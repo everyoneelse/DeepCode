@@ -63,16 +63,31 @@ file_analysis:
 llm:
   # Model selection: "anthropic" or "openai"
   model_provider: "openai"
+  
+  # DeepSeek Configuration
+  # DeepSeek 使用 OpenAI 兼容接口，因此 model_provider 设置为 "openai"
+  deepseek:
+    # DeepSeek 模型选择
+    # - deepseek-chat: 通用对话模型
+    # - deepseek-coder: 代码专用模型（推荐用于代码索引）
+    model: "deepseek-coder"
+    
+    # DeepSeek API 端点
+    api_base: "https://api.deepseek.com"
+    
+    # API Key 从 mcp_agent.secrets.yaml 的 openai.api_key 读取
+    # 请在 mcp_agent.secrets.yaml 中配置您的 DeepSeek API Key
 
   # Request parameters
-  max_tokens: 4000
+  max_tokens: 8000  # DeepSeek 支持更大的 token 限制
   temperature: 0.3
 
   # System prompt for analysis
   system_prompt: "You are a code analysis expert. Provide precise, structured analysis of code relationships and similarities."
 
   # Rate limiting (seconds between requests)
-  request_delay: 0.1
+  # DeepSeek 有速率限制，建议保持适当延迟
+  request_delay: 0.2
 
   # Retry configuration
   max_retries: 3

@@ -85,7 +85,7 @@ mcp:
         PYTHONPATH: .
 openai:
   base_max_tokens: 16384
-  default_model: anthropic/claude-3.5-sonnet
+  default_model: deepseek-chat  # DeepSeek 聊天模型 (或使用 deepseek-coder 用于代码任务)
   max_tokens_policy: adaptive
   retry_max_tokens: 32768
 planning_mode: traditional
