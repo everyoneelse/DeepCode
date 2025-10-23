@@ -112,7 +112,10 @@ def log_operation(action: str, details: Dict[str, Any]):
 
 @mcp.tool()
 async def read_file(
-    file_path: str, start_line: int = None, end_line: int = None
+    file_path: str,
+    start_line: int = None,
+    end_line: int = None,
+    max_bytes: int = 1024 * 1024,
 ) -> str:
     """
     Read file content, supports specifying line number range
@@ -135,8 +138,22 @@ async def read_file(
             )
             return json.dumps(result, ensure_ascii=False, indent=2)
 
-        with open(full_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
+        # Read file efficiently and enforce size cap
+        file_size = full_path.stat().st_size
+        truncated = False
+        if file_size > max_bytes and (start_line is None and end_line is None):
+            truncated = True
+            # Read only first max_bytes safely
+            with open(full_path, "rb") as f:
+                raw = f.read(max_bytes)
+            try:
+                content_str = raw.decode("utf-8", errors="replace")
+            except Exception:
+                content_str = raw.decode("utf-8", errors="replace")
+            lines = content_str.splitlines(keepends=True)
+        else:
+            with open(full_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
 
         # 处理行号范围
         if start_line is not None or end_line is not None:
@@ -152,6 +169,8 @@ async def read_file(
             "file_path": file_path,
             "total_lines": len(lines),
             "size_bytes": len(content.encode("utf-8")),
+            "truncated": truncated,
+            "max_bytes": max_bytes,
         }
 
         log_operation(
