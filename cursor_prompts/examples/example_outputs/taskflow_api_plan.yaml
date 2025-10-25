@@ -1,0 +1,433 @@
+# TaskFlow API实现计划示例输出
+# 这是使用代码规划prompt分析任务管理系统需求后的示例输出
+
+implementation_plan:
+  project_info:
+    name: "TaskFlow API"
+    description: "RESTful API for collaborative task management system"
+    type: "web_app"
+    language: "Python"
+    
+  architecture:
+    pattern: "Layered Architecture with Service Layer"
+    components:
+      - name: "Authentication Service"
+        responsibility: "User authentication and authorization"
+        interfaces: ["login", "register", "verify_token", "refresh_token"]
+        dependencies: ["JWT", "bcrypt", "database"]
+      
+      - name: "User Management Service"
+        responsibility: "User CRUD operations and profile management"
+        interfaces: ["create_user", "get_user", "update_user", "delete_user"]
+        dependencies: ["database", "authentication"]
+      
+      - name: "Project Management Service"
+        responsibility: "Project lifecycle and member management"
+        interfaces: ["create_project", "manage_members", "set_permissions"]
+        dependencies: ["database", "user_service", "notification_service"]
+      
+      - name: "Task Management Service"
+        responsibility: "Task operations and workflow management"
+        interfaces: ["create_task", "assign_task", "update_status", "track_history"]
+        dependencies: ["database", "project_service", "notification_service"]
+      
+      - name: "Notification Service"
+        responsibility: "Real-time notifications and alerts"
+        interfaces: ["send_notification", "create_alert", "manage_preferences"]
+        dependencies: ["email_service", "websocket", "database"]
+      
+      - name: "File Management Service"
+        responsibility: "File upload and attachment handling"
+        interfaces: ["upload_file", "delete_file", "get_file_url"]
+        dependencies: ["storage", "security"]
+    
+    data_flow:
+      - from: "API Layer"
+        to: "Authentication Service"
+        data: "credentials, tokens"
+        description: "User authentication and authorization"
+      
+      - from: "API Layer"
+        to: "Business Services"
+        data: "validated requests"
+        description: "Authenticated and validated business operations"
+      
+      - from: "Business Services"
+        to: "Database Layer"
+        data: "entity operations"
+        description: "Data persistence and retrieval"
+      
+      - from: "Business Services"
+        to: "Notification Service"
+        data: "events, alerts"
+        description: "Asynchronous notifications and updates"
+
+  file_structure: |
+    taskflow-api/
+    ├── src/
+    │   ├── __init__.py
+    │   ├── main.py                 # FastAPI application entry point
+    │   ├── models/
+    │   │   ├── __init__.py
+    │   │   ├── database.py         # Database connection and session
+    │   │   ├── models.py           # SQLAlchemy ORM models
+    │   │   └── enums.py            # Enumeration definitions
+    │   ├── schemas/
+    │   │   ├── __init__.py
+    │   │   ├── user.py             # User Pydantic schemas
+    │   │   ├── project.py          # Project Pydantic schemas
+    │   │   ├── task.py             # Task Pydantic schemas
+    │   │   ├── comment.py          # Comment Pydantic schemas
+    │   │   └── common.py           # Common schemas and base classes
+    │   ├── api/
+    │   │   ├── __init__.py
+    │   │   ├── deps.py             # Dependency injection
+    │   │   ├── users.py            # User management endpoints
+    │   │   ├── projects.py         # Project management endpoints
+    │   │   ├── tasks.py            # Task management endpoints
+    │   │   ├── comments.py         # Comment management endpoints
+    │   │   └── files.py            # File management endpoints
+    │   ├── services/
+    │   │   ├── __init__.py
+    │   │   ├── auth_service.py     # Authentication business logic
+    │   │   ├── user_service.py     # User business logic
+    │   │   ├── project_service.py  # Project business logic
+    │   │   ├── task_service.py     # Task business logic
+    │   │   ├── comment_service.py  # Comment business logic
+    │   │   ├── notification_service.py # Notification logic
+    │   │   └── file_service.py     # File handling logic
+    │   ├── auth/
+    │   │   ├── __init__.py
+    │   │   ├── security.py         # Password hashing and JWT
+    │   │   ├── permissions.py      # Permission checking
+    │   │   └── dependencies.py     # Auth dependencies
+    │   ├── core/
+    │   │   ├── __init__.py
+    │   │   ├── config.py           # Application configuration
+    │   │   ├── security.py         # Security utilities
+    │   │   ├── logging.py          # Logging configuration
+    │   │   └── exceptions.py       # Custom exceptions
+    │   └── utils/
+    │       ├── __init__.py
+    │       ├── validators.py       # Data validation utilities
+    │       ├── formatters.py       # Response formatting
+    │       └── helpers.py          # General helper functions
+    ├── migrations/
+    │   ├── env.py                  # Alembic environment
+    │   ├── script.py.mako          # Migration template
+    │   └── versions/               # Database migration files
+    ├── tests/
+    │   ├── __init__.py
+    │   ├── conftest.py             # Test configuration and fixtures
+    │   ├── test_auth.py            # Authentication tests
+    │   ├── test_users.py           # User API tests
+    │   ├── test_projects.py        # Project API tests
+    │   ├── test_tasks.py           # Task API tests
+    │   ├── test_comments.py        # Comment API tests
+    │   └── test_integration.py     # Integration tests
+    ├── scripts/
+    │   ├── init_db.py              # Database initialization
+    │   ├── create_superuser.py     # Create admin user
+    │   ├── seed_data.py            # Test data seeding
+    │   └── backup_db.py            # Database backup utility
+    ├── docker/
+    │   ├── Dockerfile              # Application container
+    │   ├── Dockerfile.dev          # Development container
+    │   ├── docker-compose.yml      # Development environment
+    │   └── docker-compose.prod.yml # Production environment
+    ├── docs/
+    │   ├── api/                    # API documentation
+    │   ├── deployment.md           # Deployment guide
+    │   ├── development.md          # Development setup
+    │   └── architecture.md         # System architecture
+    ├── .env.example                # Environment variables template
+    ├── .gitignore                  # Git ignore rules
+    ├── alembic.ini                 # Database migration config
+    ├── requirements.txt            # Production dependencies
+    ├── requirements-dev.txt        # Development dependencies
+    ├── pyproject.toml              # Project configuration
+    └── README.md                   # Project documentation
+
+  implementation_components:
+    authentication_system:
+      - name: "JWT Authentication"
+        file_location: "src/auth/security.py"
+        priority: "高"
+        estimated_complexity: "中等"
+        key_functions:
+          - function_name: "create_access_token"
+            purpose: "Generate JWT access token"
+            inputs: "user_id, expiration_time"
+            outputs: "JWT token string"
+          - function_name: "verify_token"
+            purpose: "Validate JWT token"
+            inputs: "token string"
+            outputs: "user_id or exception"
+          - function_name: "hash_password"
+            purpose: "Hash user password"
+            inputs: "plain password"
+            outputs: "hashed password"
+        dependencies: ["python-jose", "passlib", "bcrypt"]
+        
+    data_models:
+      - name: "User Model"
+        file_location: "src/models/models.py"
+        priority: "高"
+        estimated_complexity: "简单"
+        key_fields:
+          - field_name: "id"
+            type: "Integer"
+            constraints: "Primary Key, Auto Increment"
+          - field_name: "username"
+            type: "String(50)"
+            constraints: "Unique, Not Null, Index"
+          - field_name: "email"
+            type: "String(100)"
+            constraints: "Unique, Not Null, Index"
+          - field_name: "password_hash"
+            type: "String(255)"
+            constraints: "Not Null"
+        relationships: ["owned_projects", "project_memberships", "assigned_tasks"]
+        
+      - name: "Project Model"
+        file_location: "src/models/models.py"
+        priority: "高"
+        estimated_complexity: "中等"
+        key_fields:
+          - field_name: "id"
+            type: "Integer"
+            constraints: "Primary Key"
+          - field_name: "name"
+            type: "String(100)"
+            constraints: "Not Null"
+          - field_name: "owner_id"
+            type: "Integer"
+            constraints: "Foreign Key to User"
+        relationships: ["owner", "members", "tasks"]
+        
+      - name: "Task Model"
+        file_location: "src/models/models.py"
+        priority: "高"
+        estimated_complexity: "复杂"
+        key_fields:
+          - field_name: "id"
+            type: "Integer"
+            constraints: "Primary Key"
+          - field_name: "title"
+            type: "String(200)"
+            constraints: "Not Null"
+          - field_name: "status"
+            type: "Enum"
+            constraints: "Default: TODO"
+          - field_name: "priority"
+            type: "Enum"
+            constraints: "Default: MEDIUM"
+        relationships: ["project", "assignee", "creator", "comments", "history"]
+        
+    api_endpoints:
+      - name: "User Management API"
+        file_location: "src/api/users.py"
+        priority: "高"
+        estimated_complexity: "中等"
+        endpoints:
+          - method: "POST"
+            path: "/api/users/register"
+            purpose: "User registration"
+          - method: "POST"
+            path: "/api/users/login"
+            purpose: "User authentication"
+          - method: "GET"
+            path: "/api/users/profile"
+            purpose: "Get user profile"
+        dependencies: ["UserService", "AuthService", "Pydantic schemas"]
+        
+      - name: "Task Management API"
+        file_location: "src/api/tasks.py"
+        priority: "高"
+        estimated_complexity: "复杂"
+        endpoints:
+          - method: "GET"
+            path: "/api/projects/{project_id}/tasks"
+            purpose: "List project tasks"
+          - method: "POST"
+            path: "/api/projects/{project_id}/tasks"
+            purpose: "Create new task"
+          - method: "PUT"
+            path: "/api/tasks/{task_id}/status"
+            purpose: "Update task status"
+        dependencies: ["TaskService", "ProjectService", "Permission checks"]
+
+  development_phases:
+    phase_1:
+      name: "Foundation Setup"
+      priority: 1
+      tasks:
+        - "Set up FastAPI application structure"
+        - "Configure database connection and ORM"
+        - "Implement basic authentication system"
+        - "Create user registration and login endpoints"
+        - "Set up basic testing framework"
+      deliverables: ["Working authentication", "User management", "Basic API structure"]
+      estimated_time: "1 week"
+      
+    phase_2:
+      name: "Core Business Logic"
+      priority: 2
+      tasks:
+        - "Implement project management system"
+        - "Create task management functionality"
+        - "Add project member management"
+        - "Implement task assignment and status tracking"
+        - "Add comprehensive input validation"
+      deliverables: ["Project CRUD", "Task CRUD", "Member management", "Status tracking"]
+      estimated_time: "2 weeks"
+      
+    phase_3:
+      name: "Advanced Features"
+      priority: 3
+      tasks:
+        - "Implement comment system"
+        - "Add file upload functionality"
+        - "Create notification system"
+        - "Implement task history tracking"
+        - "Add search and filtering capabilities"
+      deliverables: ["Comment system", "File uploads", "Notifications", "Search functionality"]
+      estimated_time: "1.5 weeks"
+      
+    phase_4:
+      name: "Production Readiness"
+      priority: 4
+      tasks:
+        - "Add comprehensive error handling"
+        - "Implement rate limiting and security measures"
+        - "Set up monitoring and logging"
+        - "Create deployment configurations"
+        - "Write comprehensive documentation"
+      deliverables: ["Production deployment", "Security measures", "Monitoring", "Documentation"]
+      estimated_time: "1 week"
+
+  technical_stack:
+    language: "Python 3.9+"
+    frameworks:
+      - name: "FastAPI"
+        purpose: "Web framework for building APIs"
+        version: ">=0.68.0"
+      - name: "SQLAlchemy"
+        purpose: "ORM for database operations"
+        version: ">=1.4.0"
+      - name: "Alembic"
+        purpose: "Database migration tool"
+        version: ">=1.7.0"
+    libraries:
+      web:
+        - "fastapi>=0.68.0"
+        - "uvicorn[standard]>=0.15.0"
+        - "python-multipart>=0.0.5"
+      database:
+        - "sqlalchemy>=1.4.0"
+        - "psycopg2-binary>=2.9.0"
+        - "alembic>=1.7.0"
+      authentication:
+        - "python-jose[cryptography]>=3.3.0"
+        - "passlib[bcrypt]>=1.7.4"
+        - "python-multipart>=0.0.5"
+      validation:
+        - "pydantic[email]>=1.8.0"
+        - "email-validator>=1.1.0"
+      utilities:
+        - "python-dotenv>=0.19.0"
+        - "redis>=3.5.3"
+        - "celery>=5.2.0"
+    development:
+      - "pytest>=6.2.0"
+      - "pytest-asyncio>=0.15.0"
+      - "httpx>=0.24.0"
+      - "black>=21.0.0"
+      - "isort>=5.9.0"
+      - "flake8>=3.9.0"
+      - "mypy>=0.910"
+
+  environment_setup:
+    python_version: "3.9+"
+    system_requirements:
+      - "操作系统: Linux/macOS/Windows"
+      - "内存: 最少2GB，推荐4GB"
+      - "磁盘空间: 最少1GB"
+    external_services:
+      - "PostgreSQL 12+"
+      - "Redis 6+"
+      - "SMTP服务器（用于邮件通知）"
+    installation_steps:
+      - "克隆项目仓库"
+      - "创建Python虚拟环境"
+      - "安装依赖: pip install -r requirements.txt"
+      - "设置环境变量: cp .env.example .env"
+      - "初始化数据库: alembic upgrade head"
+      - "创建超级用户: python scripts/create_superuser.py"
+      - "启动服务: uvicorn src.main:app --reload"
+      
+  validation_plan:
+    unit_tests:
+      - "Authentication service functionality"
+      - "User service CRUD operations"
+      - "Project service business logic"
+      - "Task service workflow management"
+      - "Data model relationships and constraints"
+    integration_tests:
+      - "Complete user registration and login flow"
+      - "Project creation and member management"
+      - "Task lifecycle management"
+      - "Permission and authorization checks"
+      - "API endpoint integration"
+    performance_tests:
+      - "API response time under load"
+      - "Database query performance"
+      - "Concurrent user handling"
+      - "Memory usage optimization"
+    security_tests:
+      - "Authentication and authorization"
+      - "Input validation and sanitization"
+      - "SQL injection prevention"
+      - "XSS protection"
+    success_criteria:
+      - criterion: "API Performance"
+        description: "Average response time < 200ms for 95% of requests"
+      - criterion: "Concurrent Users"
+        description: "Support 1000+ concurrent users without degradation"
+      - criterion: "Test Coverage"
+        description: "Achieve >90% code coverage with unit tests"
+      - criterion: "Security Compliance"
+        description: "Pass security audit with no critical vulnerabilities"
+      - criterion: "Documentation Quality"
+        description: "Complete API documentation with examples"
+
+  deployment_configuration:
+    containerization:
+      - "Multi-stage Docker build for optimized images"
+      - "Docker Compose for development environment"
+      - "Production-ready Docker configuration"
+    environment_management:
+      - "Separate configurations for dev/staging/production"
+      - "Environment variable management"
+      - "Secret management for sensitive data"
+    database_management:
+      - "Automated database migrations"
+      - "Database backup and recovery procedures"
+      - "Connection pooling and optimization"
+    monitoring_and_logging:
+      - "Structured logging with correlation IDs"
+      - "Application performance monitoring"
+      - "Health check endpoints"
+      - "Error tracking and alerting"
+
+  implementation_notes:
+    - "Implement proper database indexing for frequently queried fields"
+    - "Use database transactions for multi-step operations"
+    - "Implement proper error handling with meaningful error messages"
+    - "Add request/response logging for debugging and monitoring"
+    - "Use connection pooling for database connections"
+    - "Implement proper input validation and sanitization"
+    - "Consider implementing API versioning for future compatibility"
+    - "Use async/await patterns for I/O operations to improve performance"
+    - "Implement proper CORS configuration for frontend integration"
+    - "Add comprehensive API documentation with examples and schemas"
